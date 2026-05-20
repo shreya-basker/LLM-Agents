@@ -1,0 +1,131 @@
+# install
+!pip install faster-whisper pipecat-ai "pipecat-ai[google,kokoro]" kokoro soundfile torch torchaudio loguru
+!pip install "pipecat-ai[daily]"
+
+
+
+import asyncio
+
+from faster_whisper import WhisperModel
+from loguru import logger
+
+from pipecat.frames.frames import LLMMessagesAppendFrame, LLMRunFrame, EndFrame
+from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.runner import PipelineRunner
+from pipecat.pipeline.task import PipelineParams, PipelineTask
+from pipecat.frames.frames import AudioRawFrame, TextFrame
+
+from pipecat.processors.frame_processor import FrameProcessor
+
+from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
+
+from pipecat.services.google.llm import GoogleLLMService
+from pipecat.services.kokoro.tts import KokoroTTSService
+
+
+# audio transcription
+logger.info("Loading faster-whisper model...")
+model = WhisperModel(
+    "tiny",
+    device="cpu",
+    compute_type="int8"
+)
+
+logger.info("Transcribing audio...")
+try:
+    segments, info = model.transcribe("test.wav")
+    transcript = " ".join(segment.text for segment in segments)
+except FileNotFoundError:
+    logger.warning("test.wav not found! Using fallback prompt for debugging.")
+    transcript = "Hello! Tell me a one-sentence joke."
+
+print("\nTRANSCRIPT INTERCEPTED:\n")
+print(transcript)
+
+
+# create LLM 
+llm = GoogleLLMService(
+    api_key="AIzaSyDWeY4Fr84ufh_m_C7ztDcvKOd39QyQ-nU",
+    model="gemini-2.5-flash",  # Fixed: Changed from 'gemini-3-flash' to valid tag
+    settings=GoogleLLMService.Settings(
+        system_instruction="""
+        You are a helpful conversational AI assistant.
+        Your responses will be spoken aloud, so avoid markdown, emojis, or bullet points.
+        Keep responses short and natural.
+        """
+    )
+)
+
+context = LLMContext()
+user_aggregator, assistant_aggregator = LLMContextAggregatorPair(context)
+
+#create kokoro
+tts = KokoroTTSService(
+    settings=KokoroTTSService.Settings(
+        voice="af_heart",
+    ),
+)
+
+
+#output processor
+
+
+class PrintProcessor(FrameProcessor):
+    async def process_frame(self, frame, direction):
+        await super().process_frame(frame, direction)
+
+        # 1. Catch Text chunks coming out of the LLM/TTS boundary
+        if isinstance(frame, TextFrame):
+            print(f"Text Frame Chunk: '{frame.text}'")
+
+        # 2. Catch Audio data coming out of Kokoro
+        elif isinstance(frame, AudioRawFrame):
+            print(f"Audio Frame: {len(frame.audio)} bytes | {frame.sample_rate}Hz")
+
+        # 3. Catch all other backend transport signaling/control frames
+        else:
+            print(f" Control Frame: {type(frame).__name__}")
+
+        await self.push_frame(frame, direction)
+
+output_processor = PrintProcessor()
+
+#pipeline
+
+pipeline = Pipeline(
+    [
+        user_aggregator,      
+        llm,                  
+        tts,                  
+        output_processor,     
+        assistant_aggregator 
+    ]
+)
+
+task = PipelineTask(pipeline)
+runner = PipelineRunner()
+
+
+async def main():
+    logger.info("Starting Pipecat pipeline...")
+
+    # Push transcript into Pipecat
+    await task.queue_frames(
+        [
+            LLMMessagesAppendFrame(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": transcript
+                    }
+                ]
+            ),
+            LLMRunFrame(),
+            EndFrame() 
+        ]
+    )
+
+    await runner.run(task)
+
+await main()
