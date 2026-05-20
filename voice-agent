@@ -3,7 +3,7 @@
 !pip install "pipecat-ai[daily]"
 
 
-
+import time
 import asyncio
 
 from faster_whisper import WhisperModel
@@ -71,25 +71,49 @@ tts = KokoroTTSService(
 #output processor
 
 
-class PrintProcessor(FrameProcessor):
+class LatencyTrackingProcessor(FrameProcessor):
+    def __init__(self):
+        super().__init__()
+        self.start_time = None
+        self.first_text_received = False
+        self.first_audio_received = False
+
+    def reset_timers(self):
+        self.start_time = time.time()
+        self.first_text_received = False
+        self.first_audio_received = False
+        logger.info("--- Latency Timer Started ---")
+
     async def process_frame(self, frame, direction):
         await super().process_frame(frame, direction)
 
-        # 1. Catch Text chunks coming out of the LLM/TTS boundary
+        # 1. Catch Text chunks coming out of the LLM
         if isinstance(frame, TextFrame):
+            if self.start_time and not self.first_text_received:
+                ttfb_text = (time.time() - self.start_time) * 1000
+                print(f"\n[LATENCY] Time to First Text Byte (LLM TTFB): {ttfb_text:.2f} ms")
+                self.first_text_received = True
+            
             print(f"Text Frame Chunk: '{frame.text}'")
 
         # 2. Catch Audio data coming out of Kokoro
         elif isinstance(frame, AudioRawFrame):
+            if self.start_time and not self.first_audio_received:
+                ttfb_audio = (time.time() - self.start_time) * 1000
+                print(f"[LATENCY] Time to First Audio Byte (TTS TTFB): {ttfb_audio:.2f} ms\n")
+                self.first_audio_received = True
+
             print(f"Audio Frame: {len(frame.audio)} bytes | {frame.sample_rate}Hz")
 
-        # 3. Catch all other backend transport signaling/control frames
+        # 3. Catch control frames
         else:
-            print(f" Control Frame: {type(frame).__name__}")
+            # print(f" Control Frame: {type(frame).__name__}")
+            pass
 
         await self.push_frame(frame, direction)
 
-output_processor = PrintProcessor()
+# Instantiate the updated processor
+output_processor = LatencyTrackingProcessor()
 
 #pipeline
 
@@ -125,7 +149,7 @@ async def main():
             EndFrame() 
         ]
     )
-
+    output_processor.reset_timers()
     await runner.run(task)
 
 await main()
