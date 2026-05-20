@@ -1,0 +1,61 @@
+# 1. Update system packages and install headless Chrome dependencies
+!sudo apt-get update
+!sudo apt-get install -y pciutils libgbm1 x11-utils xvfb chromium-browser
+
+# 2. Install modern web-agent frameworks and browser drivers
+!pip install browser-use langchain-ollama playwright nest_asyncio
+!playwright install chromium
+
+import asyncio
+import os
+import subprocess
+import nest_asyncio
+from langchain_ollama import ChatOllama
+from browser_use import Agent
+
+
+RUNPOD_OLLAMA_ENDPOINT = " " # NEED TO ADD RUNPOD URL
+
+# 2. HEADLESS LINUX DISPLAY EMULATION 
+os.environ["DISPLAY"] = ":99"
+try:
+    # Check if Xvfb is already running to avoid throwing structural bind errors
+    subprocess.run(["pgrep", "Xvfb"], check=True, stdout=subprocess.DEVNULL)
+except subprocess.CalledProcessError:
+    # If not running, start the virtual display buffer
+    subprocess.Popen(["Xvfb", ":99", "-screen", "0", "1280x1024x24"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+# 3. ASYNC AUTOMATION TASK DEFINITION
+async def run_auto_browser():
+    print("Connecting to remote Ollama engine on RunPod...")
+    
+    # Configure the structural LLM driver pointing to RunPod
+    llm = ChatOllama(
+        model="llama3",              
+        base_url=RUNPOD_OLLAMA_ENDPOINT,
+        num_ctx=32000,               
+        temperature=0.0
+    )
+    
+    # CAN GIVE ANY FUNCTION
+    target_task = "Go to news.ycombinator.com, grab the title of the #1 ranked post, and print it out."
+    
+    print(f"Initializing Browser-Use agent with task: '{target_task}'")
+    agent = Agent(
+        task=target_task,
+        llm=llm
+    )
+    
+    # Run the loop and process the visual/structural pipeline
+    print("Executing steps...")
+    result = await agent.run()
+    
+    print("\n" + "="*40)
+    print(" SUCCESSFUL EXECUTION RESULT ")
+    print("="*40)
+    print(result)
+
+# 4. TRIGGER JUPYTER RUNTIME EXECUTION
+# nest_asyncio intercepts the system loop so it doesn't collide with Colab's backend websocket
+nest_asyncio.apply()
+asyncio.run(run_auto_browser())
