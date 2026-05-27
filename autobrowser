@@ -1,4 +1,4 @@
-# 1. Update system packages and install headless Chrome dependencies
+
 !sudo apt-get update
 !sudo apt-get install -y pciutils libgbm1 x11-utils xvfb chromium-browser
 
@@ -19,15 +19,13 @@ RUNPOD_OLLAMA_ENDPOINT = " " # NEED TO ADD RUNPOD URL
 # 2. HEADLESS LINUX DISPLAY EMULATION 
 os.environ["DISPLAY"] = ":99"
 try:
-    # Check if Xvfb is already running to avoid throwing structural bind errors
-    subprocess.run(["pgrep", "Xvfb"], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["pgrep", "Xvfb"], check=True, stdout=subprocess.DEVNULL) # Check if Xvfb is already running to avoid throwing structural bind errors
 except subprocess.CalledProcessError:
-    # If not running, start the virtual display buffer
-    subprocess.Popen(["Xvfb", ":99", "-screen", "0", "1280x1024x24"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(["Xvfb", ":99", "-screen", "0", "1280x1024x24"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # If not running, start the virtual display buffer
 
 # 3. ASYNC AUTOMATION TASK DEFINITION
 async def run_auto_browser():
-    print("Connecting to remote Ollama engine on RunPod...")
+    print("Connecting to remote Ollama engine...")
     
     # Configure the structural LLM driver pointing to RunPod
     llm = ChatOllama(
